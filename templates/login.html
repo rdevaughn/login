@@ -1,0 +1,159 @@
+<!DOCTYPE html >
+<html>
+<head>
+  <title>Login</title>
+  <script type="text/javascript" src="/js/jquery-2.2.0.min.js"></script>
+  <script type="text/javascript">
+    $(document).ready(function() {
+      console.log($("span.warning").width());
+      $("div.warning_wrapper").css("width", ($("span.warning").width()+5));
+      $("#logout input").click(function(e) {
+        e.preventDefault();
+        document.cookie = "gorilla-session" + '=; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+        window.location.replace("/login"); // form action was appending ? to url this prevents that
+      });
+      $("#loginCreate input[type='submit']").click(function(e) {
+        if($("#action").length) {
+          return;
+        } else {
+          e.preventDefault();
+          $("#loginCreate").append($("<input id='action' type='hidden' name='action'>").val($(this).val()));
+          $(this).trigger('click');
+        }
+      });
+      $("#email").click( function(e) {
+        $("#email").val("");
+        $("#email").css("color","black");
+        $("#email").css("font-style","normal");
+      });
+      $("#email").focusout( function(e) {
+        if($("#email").val() == "") {
+          $("#email").val("Email");
+          $("#email").css("color","grey");
+          $("#email").css("font-style","italic");
+        }
+      });
+      $("#pwInput").click( function(e) {
+        $("#pwInput").val("");
+        $("#pwInput").css("color","black");
+        $("#pwInput").css("font-style","normal");
+      });
+      $("#pwInput").focusout( function(e) {
+        if($("#pwInput").val() == "") {
+          $("#pwInput").val("Password");
+          $("#pwInput").css("color","grey");
+          $("#pwInput").css("font-style","italic");
+        }
+      });
+      $("#pwInput").keypress(function(e) {
+        setTimeout(function() {
+            maskPassword(e)
+        }, 500);
+      });
+      $("#pwInput").keydown(function(e) {
+          if (e.keyCode == 8) {
+              setTimeout(function() { maskPassword(e) }, 1);
+          }
+      });
+    });
+
+    function maskPassword(e) {
+      var text = $('#password').val();
+      var stars = $('#password').val().length;
+      var unicode = e.keyCode ? e.keyCode : e.charCode;
+      $("#keycode").html(unicode);
+      //Get Current Cursor Position on Password Textbox
+      var curPos = $("#pwInput").getCursorPosition();
+      var PwdLength = $("#pwInput").val().length;
+      if (unicode != 9 && unicode != 13 && unicode != 37 && unicode != 40 && unicode != 37 && unicode != 39) {
+          //If NOT <Back Space> OR <DEL> Then...
+          if (unicode != 8 && unicode != 46) {
+              text = text + String.fromCharCode(unicode);
+              stars += 1;
+          }
+          //If Press <Back Space> Or <DEL> Then...
+          else if ((unicode == 8 || unicode == 46) && stars != PwdLength) {
+              stars -= 1;
+              text = text.substr(0, curPos) + text.substr(curPos + 1);
+          }
+          //Set New String on both input fields
+          $('#password').val(text);
+          $('#pwInput').val(generateStars(stars));
+      }
+    }
+
+    function generateStars(n) {
+      var stars = '';
+      for (var i = 0; i < n; i++) {
+          stars += '*';
+      }
+      return stars;
+    }
+
+    jQuery.fn.getCursorPosition = function() {
+        if (this.lengh == 0) return -1;
+        return $(this).getSelectionStart();
+    }
+
+    jQuery.fn.getSelectionStart = function() {
+        if (this.lengh == 0) return -1;
+        input = this[0];
+        var pos = input.value.length;
+        if (input.createTextRange) {
+            var r = document.selection.createRange().duplicate();
+            r.moveEnd('character', input.value.length);
+            if (r.text == '') pos = input.value.length;
+            pos = input.value.lastIndexOf(r.text);
+        } else if (typeof(input.selectionStart) != "undefined") pos = input.selectionStart;
+        return pos;
+    }
+  </script>
+  <STYLE type="text/css">
+    .warning_wrapper { margin: auto; }
+    .warning { color:red; font-size:.8em;}
+    #v_wrapper { display: table-cell; height: 30em; vertical-align: middle; }
+    #h_wrapper { margin: auto; width: 9em; }
+    #login { display: inline-block; padding: .5em; width: 8.5em;  height: 7em; }
+    #loginCreate input[type="submit"] { width: 5.75em; }
+    #loginCreate input[type="text"] { margin-bottom: .4em; }
+    #password { display: none; }
+    {{if not .email}}#email, {{end}}#pwInput { color:grey; font-style: italic; }
+  </STYLE>
+</head>
+<body>
+  <div id="h_wrapper">
+    <div id="v_wrapper">
+      <div id="login">
+        {{if .unfamiliar}}
+          <form id="loginCreate" action="/login" method="POST">
+            <input id="email" name="email" type="text" value="{{if .email}}{{.email}}{{else}}Email{{end}}">
+            <br />
+            <input id="pwInput" name="pwInput" type="text" value="Password" autocomplete="off">
+            <br />
+            <input type="submit" value="Login">
+            <input type="submit" value="Create">
+            <input type="text" id="password" name="password">
+          </form>
+            {{if .emailTaken}}
+              <div class="warning_wrapper"><span class="warning">Email address taken</span></div> <br />
+            {{end}}
+            {{if .incorrectPassword}}
+              <div class="warning_wrapper"><span class="warning">Incorrect password</span></div> <br />
+            {{end}}
+            {{if .emailInvalid}}
+              <div class="warning_wrapper"><span class="warning">Invalid email</span></div> <br />
+            {{end}}
+            {{if .unknownUser}}
+              <div class="warning_wrapper"><span class="warning">Unknown user</span></div> <br />
+            {{end}}
+        {{else}}
+          {{.email}}
+            <form id="logout" action="/login">
+              <input type="submit" value="Logout">
+            </form>
+          {{end}}
+      </div>
+    </div>
+  </div>
+</body>
+</html>
