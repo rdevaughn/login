@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
+	"math/rand"
 
 	"github.com/gorilla/context"
 	"github.com/gorilla/sessions"
@@ -17,9 +19,9 @@ import (
 )
 
 const (
-	DB_USER     = "go_app"
-	DB_PASSWORD = "goapppw"
-	DB_NAME     = "go_db"
+	DB_USER     = "login_app"
+	DB_PASSWORD = "loginapppw"
+	DB_NAME     = "login_db"
 )
 
 var store = sessions.NewCookieStore([]byte("something-very-secret")) // questions about security implications
@@ -67,9 +69,9 @@ func handleLoginRequest(w http.ResponseWriter, r *http.Request) {
 
 func logUserIn(r *http.Request, w http.ResponseWriter, session *sessions.Session) {
 	// lookup hash with email, handle failure
-	hash, err := hashLookup(r.Form["email"][0])
+	hash, salt, err := hashLookup(r.Form["email"][0])
 	if err == nil {
-		test := bcrypt.CompareHashAndPassword([]byte(hash), []byte(r.Form["password"][0]))
+		test := bcrypt.CompareHashAndPassword([]byte(hash), []byte(r.Form["password"][0] + salt))
 		// compare hashes if match, save session, login
 		if test == nil {
 			session.Values["email"] = r.Form["email"][0]
@@ -95,10 +97,11 @@ func logUserIn(r *http.Request, w http.ResponseWriter, session *sessions.Session
 func createUser(r *http.Request, w http.ResponseWriter, session *sessions.Session) {
 	// validate email
 	if validateEmail(r.Form["email"][0]) {
-		// create hash, save user to db
-		hash, err := bcrypt.GenerateFromPassword([]byte(r.Form["password"][0]), bcrypt.DefaultCost)
+		// create salt,hash save user to db
+		salt := randomString(24)
+		hash, err := bcrypt.GenerateFromPassword([]byte(r.Form["password"][0] + salt), bcrypt.DefaultCost)
 		check(err)
-		err = saveUser(r.Form["email"][0], string(hash))
+		err = saveUser(r.Form["email"][0], string(hash), salt)
 		if err != nil { // if save fails (because of email pkey) redirect, notify user
 			t := template.New("login")
 			t, err := t.ParseFiles("templates/login.html")
@@ -123,22 +126,28 @@ func createUser(r *http.Request, w http.ResponseWriter, session *sessions.Sessio
 
 func checkSession(session *sessions.Session) error { // add salt
 	hash := ""
+	var salt string
 	if session.Values["email"] != nil && session.Values["email"] != nil {
-		hash, _ = hashLookup(session.Values["email"].(string)) // compare cookie + db (necessary? safe? best practice?)
-		return bcrypt.CompareHashAndPassword([]byte(hash), []byte(session.Values["key"].(string)))
+		hash, salt, _ = hashLookup(session.Values["email"].(string)) // compare cookie + db (necessary? safe? best practice?)
+		return bcrypt.CompareHashAndPassword([]byte(hash), []byte(session.Values["key"].(string) + salt))
 	}
 	return errors.New("Error: Missing email or key")
 }
 
-func hashLookup(email string) (string, error) {
+func hashLookup(email string) (string, string, error) {
 	dbinfo := fmt.Sprintf("user=%s password=%s dbname=%s sslmode=disable", DB_USER, DB_PASSWORD, DB_NAME)
 	db, err := sql.Open("postgres", dbinfo)
 	check(err)
 	defer db.Close()
 	var hash string
-	query := strings.Replace("SELECT hash FROM users where email ='%s'", "%s", email, -1)
-	err = db.QueryRow(query).Scan(&hash)
-	return hash, err
+	var salt string
+	query := strings.Replace("SELECT hash, salt FROM users where email ='%s'", "%s", email, -1)
+	rows, err := db.Query(query)
+	for rows.Next() { // should only ever be one row, is this best practice?
+		err = rows.Scan(&hash, &salt)
+		check(err)
+	}
+	return hash, salt, err
 }
 
 func parseCookie(session *sessions.Session, err error) map[string]interface{} {
@@ -153,16 +162,26 @@ func parseCookie(session *sessions.Session, err error) map[string]interface{} {
 	}
 }
 
-func saveUser(email string, hash string) error {
+func saveUser(email string, hash string, salt string) error {
 	dbinfo := fmt.Sprintf("user=%s password=%s dbname=%s sslmode=disable", DB_USER, DB_PASSWORD, DB_NAME)
 	db, err := sql.Open("postgres", dbinfo)
 	check(err)
 	defer db.Close()
-	_, err = db.Exec("INSERT INTO users(email, hash) VALUES($1, $2);", email, hash)
+	_, err = db.Exec("INSERT INTO users(email, hash, salt) VALUES($1, $2, $3);", email, hash, salt)
 	return err
 }
 
 func validateEmail(email string) bool {
 	Re := regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`)
 	return Re.MatchString(email)
+}
+
+func randomString(n int) string {
+	var letters = []rune("1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	b := make([]rune, n)
+	rand.Seed(time.Now().UTC().UnixNano())
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
 }
